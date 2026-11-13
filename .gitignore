@@ -1,0 +1,7 @@
+.build/
+*.xcodeproj
+.DS_Store
+build/
+
+# not redistributable: drop your own poof.mp3 here
+Assets/poof.mp3
