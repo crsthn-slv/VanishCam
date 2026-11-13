@@ -41,7 +41,6 @@ func deviceName(_ id: CMIOObjectID) -> String {
 }
 
 public final class ObsSink {
-    public var enqueued = 0, dropped = 0, lastStatus: Int32 = 0, queueCapacity: Int32 = 0
     public init() {}
     var device: CMIODeviceID = 0
     var stream: CMIOStreamID = 0
@@ -79,10 +78,8 @@ public final class ObsSink {
         CMSampleBufferCreateForImageBuffer(allocator: nil, imageBuffer: pb, dataReady: true, makeDataReadyCallback: nil,
             refcon: nil, formatDescription: f, sampleTiming: &timing, sampleBufferOut: &sb)
         guard let sample = sb else { return }
-        queueCapacity = CMSimpleQueueGetCapacity(q)
         let st = CMSimpleQueueEnqueue(q, element: Unmanaged.passRetained(sample).toOpaque())
-        lastStatus = st
-        if st == 0 { enqueued += 1 } else { dropped += 1; Unmanaged.passUnretained(sample).release() }
+        if st != 0 { Unmanaged.passUnretained(sample).release() }   // queue full: drop
     }
 }
 

@@ -17,7 +17,7 @@ final class AppModel: ObservableObject {
 
     init() {
         _settings = Published(initialValue: store.settings)
-        engine.onFps = { [weak self] _ in   // publish only on change: a redraw every second breaks menu hover
+        engine.onTick = { [weak self] in   // publish only on change: a redraw every second breaks menu hover
             guard let self else { return }
             if phase != engine.phaseName { phase = engine.phaseName }
             if needsRoom != engine.needsRoomCapture { needsRoom = engine.needsRoomCapture }
@@ -122,7 +122,6 @@ private struct SettingsView: View {
                 set: { model.settings.outputWidth = $0 == 1080 ? 1920 : 1280; model.settings.outputHeight = $0 })) {
                 Text("720p").tag(720); Text("1080p").tag(1080)
             }
-            Toggle("Mirror preview", isOn: $model.settings.mirrorPreview)
             Toggle("Sound", isOn: $model.settings.soundEnabled)
             Slider(value: $model.settings.soundVolume, in: 0...1, step: 0.05)
                 .disabled(!model.settings.soundEnabled)

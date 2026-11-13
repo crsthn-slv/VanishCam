@@ -22,7 +22,6 @@ final class AppTests: XCTestCase {
         s.cameraIndex = 2
         s.outputWidth = 1920
         s.outputHeight = 1080
-        s.mirrorPreview = true
         s.soundEnabled = false
         s.soundVolume = 0.3
 
@@ -41,7 +40,6 @@ final class AppTests: XCTestCase {
         XCTAssertEqual(reloaded.cameraIndex, 2)
         XCTAssertEqual(reloaded.outputWidth, 1920)
         XCTAssertEqual(reloaded.outputHeight, 1080)
-        XCTAssertTrue(reloaded.mirrorPreview)
         XCTAssertFalse(reloaded.soundEnabled)
         XCTAssertEqual(reloaded.soundVolume, 0.3, accuracy: 0.001)
     }

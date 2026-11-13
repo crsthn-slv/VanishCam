@@ -4,12 +4,12 @@ import Combine
 import VanishCore
 
 /// Owns the capture session, VanishPipeline, renderer, UYVYConverter and OBS sink (pattern from the CLI).
-/// `onFps` fires roughly once per second on the main thread.
+/// `onTick` fires once per second on the main thread.
 final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, VanishSoundDelegate {
     @Published private(set) var running = false
     /// A call app is reading the OBS camera: our camera and output are on. Off between calls.
     @Published private(set) var active = false
-    var onFps: ((Double) -> Void)?
+    var onTick: (() -> Void)?
     let soundKit = SoundKit()
 
     private let session = AVCaptureSession()
@@ -18,8 +18,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     private var pipeline: VanishPipeline?
     private var converter: UYVYConverter?
     private var device: AVCaptureDevice?
-    private var frames = 0
-    private var windowStart = Date()
+    private var lastSync = Date.distantPast
     private var logWatcher: Process?
     private var ignoreStopsUntil = Date.distantPast
 
@@ -75,7 +74,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             if !active, sink.othersReading { setActive(true) }
-            onFps?(0)
+            onTick?()
         }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/log")
@@ -138,15 +137,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         guard let pb = CMSampleBufferGetImageBuffer(sb),
               let out = pipeline?.process(pb), let uyvy = converter?.convert(out) else { return }
         sink.send(uyvy)
-        frames += 1
-        let now = Date()
-        let dt = now.timeIntervalSince(windowStart)
-        if dt >= 1 {
-            let fps = Double(frames) / dt
-            frames = 0; windowStart = now
-            syncBackgroundEffect()
-            DispatchQueue.main.async { [onFps] in onFps?(fps) }
-        }
+        if Date().timeIntervalSince(lastSync) >= 1 { lastSync = Date(); syncBackgroundEffect() }
     }
 
     /// macOS camera "Background" effect (Control Center): fill behind the person from the live

@@ -108,7 +108,7 @@ public final class VanishPipeline {
         case .vanishing(let start):
             let p = Float(now.timeIntervalSince(start) / active.duration)
             if p >= 1 { phase = .gone(since: now) }
-            let m = segmenter.mask(for: camera); lastMaskFraction = Self.personFraction(m)
+            let m = segmenter.mask(for: camera)
             animate(frame: frame, mask: m, progress: min(p, 1), elapsed: now.timeIntervalSince(start), reverse: false, into: out)
         case .gone(let since):
             if let pb = liveBackground(frame, segmenter.mask(for: camera), imageWeight: 1)?.plate ?? plate.pixelBuffer {
@@ -120,7 +120,7 @@ public final class VanishPipeline {
             let p = Float(now.timeIntervalSince(start) / active.returnDuration)
             if p >= 1 { phase = .live; renderer.passThrough(frame: frame, into: out) }
             else {
-                let m = segmenter.mask(for: camera); lastMaskFraction = Self.personFraction(m)
+                let m = segmenter.mask(for: camera)
                 animate(frame: frame, mask: m, progress: p, elapsed: now.timeIntervalSince(start), reverse: true, into: out)
             }
         }
@@ -380,7 +380,6 @@ public final class VanishPipeline {
         lock.lock(); defer { lock.unlock() }
         switch phase { case .calibrating: return "calibrating"; case .live: return "live"; case .vanishing: return "vanishing"; case .gone: return "gone"; case .returning: return "returning" }
     }
-    public private(set) var lastMaskFraction: Float = 0
 
     private func scheduleDetection(_ frame: CVPixelBuffer, _ now: Date) {
         lock.lock()

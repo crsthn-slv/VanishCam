@@ -16,7 +16,6 @@ public struct AppSettings: Codable {
     public var cameraIndex: Int?
     public var outputWidth = 1280
     public var outputHeight = 720
-    public var mirrorPreview = false
     public var soundEnabled = true
     public var soundVolume: Double = 0.7
 
