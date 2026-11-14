@@ -1,0 +1,19 @@
+name: Bug report
+description: Something doesn't work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes: { label: What happened, description: What you expected vs what you saw }
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes: { label: Steps to reproduce }
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes: { label: "macOS version, chip (Apple Silicon/Intel), OBS version, call app" }
+    validations: { required: true }
+  - type: textarea
+    id: logs
+    attributes: { label: Logs or screenshots, description: "Optional. Don't paste personal data." }

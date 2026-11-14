@@ -1,0 +1,19 @@
+name: New effect mode
+description: Propose a new gesture + vanish effect
+labels: [enhancement, effect]
+body:
+  - type: input
+    id: name
+    attributes: { label: Name / inspiration (e.g. a film or game) }
+    validations: { required: true }
+  - type: textarea
+    id: gesture
+    attributes: { label: Gesture, description: "Which pose? How is it told apart from V sign, hand seal and forehead two fingers?" }
+    validations: { required: true }
+  - type: textarea
+    id: effect
+    attributes: { label: Effect, description: What happens on vanish and on reappear }
+    validations: { required: true }
+  - type: textarea
+    id: sound
+    attributes: { label: Sound, description: "Original or licensed only (no franchise assets)." }
