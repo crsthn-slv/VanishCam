@@ -52,7 +52,8 @@ struct VanishCamApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        MenuBarExtra {
+        // hidden while the camera is off; stays visible on errors so they aren't silent
+        MenuBarExtra(isInserted: Binding(get: { model.active || model.statusMessage != nil }, set: { _ in })) {
             MenuContent(model: model)
         } label: {
             // calibrating = needs an empty room: tell the user to step out
