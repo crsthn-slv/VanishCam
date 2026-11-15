@@ -3,7 +3,7 @@ import CoreVideo
 import Metal
 
 /// Gesture recognised in the current frame (instantaneous; hold-time logic lives in the state machine).
-public enum Gesture: Hashable, Sendable {
+public enum Gesture: Hashable, Sendable, Codable {
     case none
     case vSign          // index+middle raised (normal vanish)
     case handSeal       // substitution: hands clasped, both index fingers up together
@@ -13,6 +13,28 @@ public enum Gesture: Hashable, Sendable {
 /// Detects gestures from camera frames. Implementations run Apple Vision; must be cheap (called ~10-12 Hz on a downscaled copy).
 public protocol GestureDetecting: AnyObject {
     func detect(in pixelBuffer: CVPixelBuffer) -> Gesture
+    /// Debug window support: when on, `detect` also fills `lastDebug` (local UI only, never sent to the output).
+    var debugEnabled: Bool { get set }
+    var lastDebug: GestureDebugFrame? { get }
+}
+
+/// What the detector saw in the last analysed frame (downscaled copy), for the debug window.
+public struct GestureDebugFrame: @unchecked Sendable {
+    public struct Hand: Sendable {
+        /// wrist->mcp->pip->tip polylines (index, middle, ring, little), normalized image coords, y up.
+        public var fingers: [[CGPoint]]
+        public var readouts: [GestureReadout]
+        public var inForehead: Bool
+    }
+    public var image: CGImage?
+    public var hands: [Hand]
+    public var sample: [HandSample]
+    public var face: FaceSample?
+    public var forehead: CGRect?
+    public var seal: GestureReadout?
+    /// Hands Vision saw but the detector dropped, with the joints below `minJointConfidence`.
+    public var dropped: [String] = []
+    public var gesture: Gesture
 }
 
 /// Person segmentation. Returns a single-channel 8-bit mask (255 = person), same aspect ratio as the input, any size.
