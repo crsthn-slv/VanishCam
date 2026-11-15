@@ -4,7 +4,7 @@ import Combine
 import VanishCore
 
 /// Owns the capture session, VanishPipeline, renderer, UYVYConverter and OBS sink (pattern from the CLI).
-/// `onTick` fires once per second on the main thread.
+/// `onTick` fires 4x per second on the main thread.
 final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, VanishSoundDelegate {
     @Published private(set) var running = false
     /// A call app is reading the OBS camera: our camera and output are on. Off between calls.
@@ -67,11 +67,11 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     }
 
     /// In a call = another app reads the OBS camera. While our output is paused, the device's
-    /// "running somewhere" flag shows exactly that (polled 1 Hz). While it runs, the flag includes us,
+    /// "running somewhere" flag shows exactly that (polled 4 Hz: shorter OBS placeholder flash). While it runs, the flag includes us,
     /// so we wait for the OBS extension to log "stop streaming" (a reader left), then pause our output
     /// for 60 ms and check the flag. (Pausing shows OBS's placeholder for a frame: only done then.)
     private func watchForCalls() {
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self else { return }
             if !active, sink.othersReading { setActive(true) }
             onTick?()
