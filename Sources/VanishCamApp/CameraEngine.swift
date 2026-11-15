@@ -111,8 +111,32 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         } else {
             ignoreStopsUntil = Date() + 2
             sink.pause()
-            queue.async { [session] in session.stopRunning() }
+            queue.async { [self] in if !debugEnabled { session.stopRunning() } }
         }
+    }
+
+    /// Gesture debug window: runs detection on the live camera even outside a call. Local only: nothing is sent to OBS.
+    var debugEnabled = false {
+        didSet {
+            guard debugEnabled != oldValue else { return }
+            pipeline?.debugEnabled = debugEnabled
+            guard !active else { return }
+            queue.async { [self] in if debugEnabled { session.startRunning() } else { session.stopRunning() } }
+        }
+    }
+    var debugFrame: GestureDebugFrame? { pipeline?.debugFrame }
+    var holdStatus: (gesture: Gesture, elapsed: Double, required: Double)? { pipeline?.holdStatus }
+
+    /// Saves the current frame's joints as a `GestureFixture` JSON (for unit tests). Returns the file.
+    func recordFixture(expected: Gesture) -> URL? {
+        guard let f = debugFrame, !f.sample.isEmpty else { return nil }
+        let dir = Self.support.appendingPathComponent("fixtures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(expected)-\(Int(Date().timeIntervalSince1970)).json")
+        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? enc.encode(GestureFixture(expected: expected, hands: f.sample, face: f.face)),
+              (try? data.write(to: url)) != nil else { return nil }
+        return url
     }
 
     func toggle() { pipeline?.toggle() }
@@ -134,8 +158,9 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     }
 
     func captureOutput(_ o: AVCaptureOutput, didOutput sb: CMSampleBuffer, from c: AVCaptureConnection) {
-        guard let pb = CMSampleBufferGetImageBuffer(sb),
-              let out = pipeline?.process(pb), let uyvy = converter?.convert(out) else { return }
+        guard let pb = CMSampleBufferGetImageBuffer(sb) else { return }
+        if !active { pipeline?.observe(pb); return }   // debug window outside a call
+        guard let out = pipeline?.process(pb), let uyvy = converter?.convert(out) else { return }
         sink.send(uyvy)
         if Date().timeIntervalSince(lastSync) >= 1 { lastSync = Date(); syncBackgroundEffect() }
     }

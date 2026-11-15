@@ -73,6 +73,15 @@ public final class VanishPipeline {
     /// Back to live, e.g. at the start of a new call (call from the capture queue).
     public func reset() { phase = .live; armed = false }
 
+    /// Debug window (local UI only): detector internals + hold progress. Never touches the output.
+    public var debugEnabled: Bool { get { detector.debugEnabled } set { detector.debugEnabled = newValue } }
+    public var debugFrame: GestureDebugFrame? { detector.lastDebug }
+    /// Gesture being held, seconds held, seconds needed (only updated while frames are processed, i.e. during a call).
+    public var holdStatus: (gesture: Gesture, elapsed: Double, required: Double) { lock.lock(); defer { lock.unlock() }; return hold }
+    private var hold: (gesture: Gesture, elapsed: Double, required: Double) = (.none, 0, 0)
+    /// Detection only, no rendering: lets the debug window run outside a call.
+    public func observe(_ frame: CVPixelBuffer) { scheduleDetection(frame, Date()) }
+
     /// Manual controls (thread-safe): same as the gesture.
     public func toggle() { lock.lock(); pendingToggle = true; lock.unlock() }
     public func recapture() { lock.lock(); pendingRecapture = true; lock.unlock() }
@@ -352,15 +361,16 @@ public final class VanishPipeline {
         lock.unlock()
         if r { plate.reset(); phase = .calibrating(start: now); log("recapturing: step out of frame"); return }
         var trigger = t
+        defer { if detector.debugEnabled { publishHold(now) } }
         // Vision drops the gesture for single frames: a hold only breaks after 0.4 s without it
         if g != .none {
             if g != heldGesture { heldGesture = g; holdStart = now; armed = true }
             lastSeen = now
         } else if now.timeIntervalSince(lastSeen) > 0.4 { heldGesture = .none; armed = true }
         // every enabled gesture is live: it vanishes with its own effect; any of them brings you back
-        // with the effect you vanished with. the seal fires at once, teleport needs a 1 s hold
+        // with the effect you vanished with. teleport needs a 1 s hold, the others the hold time
         if armed, let k = [Gesture.vSign: EffectKind.dissolve, .handSeal: .substitution, .foreheadTwoFingers: .teleport][heldGesture],
-           settings.enabled.contains(k), now.timeIntervalSince(holdStart) >= ([.substitution: 0.0, .teleport: 1.0][k] ?? settings.holdSeconds) {
+           settings.enabled.contains(k), now.timeIntervalSince(holdStart) >= ([.teleport: 1.0][k] ?? settings.holdSeconds) {
             trigger = true; armed = false
             if case .live = phase, k != active.kind, let e = try? renderer.effect(k) { active = e }
         }
@@ -371,6 +381,12 @@ public final class VanishPipeline {
         case .gone: phase = .returning(start: now); log("reappear"); soundDelegate?.reappearDidStart()
         default: break
         }
+    }
+
+    private func publishHold(_ now: Date) {
+        let k = [Gesture.vSign: EffectKind.dissolve, .handSeal: .substitution, .foreheadTwoFingers: .teleport][heldGesture]
+        let need: Double = k.map { [EffectKind.teleport: 1.0][$0] ?? settings.holdSeconds } ?? 0
+        lock.lock(); hold = (heldGesture, heldGesture == .none ? 0 : now.timeIntervalSince(holdStart), need); lock.unlock()
     }
 
     /// Real-room mode needs a captured room (Recapture Background) to vanish.

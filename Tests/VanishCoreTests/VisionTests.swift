@@ -63,14 +63,6 @@ final class VisionTests: XCTestCase {
         XCTAssertFalse(GestureGeometry.isTeleportFingers(hand(index: true, middle: true, ring: true, little: true, spread: 0.1)))   // open hand
         XCTAssertFalse(GestureGeometry.isTeleportFingers(hand(index: true, middle: true, ring: false, little: false, spread: 0.6)))  // V
     }
-    func testHandSealOneHand() {
-        // clasped hands read as one: two fingers together, straight up
-        let merged = hand(index: true, middle: true, ring: false, little: false, spread: 0)
-        XCTAssertTrue(GestureGeometry.isHandSealOneHand(merged))
-        XCTAssertFalse(GestureGeometry.isHandSealOneHand(hand(index: true, middle: true, ring: false, little: false, spread: 0.6)))   // V
-        let tilted = HandJoints(wrist: .zero, index: rot(merged.index), middle: rot(merged.middle), ring: rot(merged.ring), little: rot(merged.little))
-        XCTAssertFalse(GestureGeometry.isHandSealOneHand(tilted))
-    }
     func rot(_ f: F) -> F { F(mcp: f.mcp.rot(), pip: f.pip.rot(), tip: f.tip.rot()) }
 
     func testForeheadRegion() {
@@ -78,6 +70,51 @@ final class VisionTests: XCTestCase {
         let r = GestureGeometry.foreheadRegion(faceBox: face, browTopY: 0.62)
         XCTAssertTrue(r.contains(CGPoint(x: 0.5, y: 0.75)))
         XCTAssertFalse(r.contains(CGPoint(x: 0.5, y: 0.5)))   // chin/nose area
+    }
+
+    // MARK: debug readouts + fixtures
+    func testReadoutsAgreeWithRules() {
+        for (i, m, g, l, sp) in [(true, true, false, false, 0.5), (true, true, false, false, 0.0), (true, true, true, false, 0.5),
+                                 (true, false, false, false, 0.0), (true, true, true, true, 0.1)] as [(Bool, Bool, Bool, Bool, CGFloat)] {
+            let h = hand(index: i, middle: m, ring: g, little: l, spread: sp)
+            let r = GestureGeometry.readouts(h)
+            XCTAssertEqual(r[0].pass, GestureGeometry.isVSign(h))
+            XCTAssertEqual(r[1].pass, GestureGeometry.isTeleportFingers(h))
+        }
+        let s = { (o: CGPoint) in self.hand(index: true, middle: false, ring: false, little: false, spread: 0, at: o) }
+        XCTAssertTrue(GestureGeometry.sealReadout(s(.zero), s(.init(x: 0.3, y: 0))).pass)
+        XCTAssertFalse(GestureGeometry.sealReadout(s(.zero), s(.init(x: 4, y: 0))).pass)
+    }
+    func testClassify() {
+        let v = HandSample(joints: hand(index: true, middle: true, ring: false, little: false), tip: .init(x: 0.5, y: 0.2))
+        XCTAssertEqual(GestureGeometry.classify(hands: [v], face: nil), .vSign)
+        XCTAssertEqual(GestureGeometry.classify(hands: [], face: nil), .none)
+        // two fingers together at the forehead -> teleport; upright below the forehead = interlaced seal (merged hand); tilted = nothing
+        let t = HandSample(joints: hand(index: true, middle: true, ring: false, little: false, spread: 0), tip: .init(x: 0.5, y: 0.75))
+        let face = FaceSample(box: CGRect(x: 0.4, y: 0.4, width: 0.2, height: 0.3), browTopY: 0.62)
+        XCTAssertEqual(GestureGeometry.classify(hands: [t], face: face), .foreheadTwoFingers)
+        var low = t; low.tip = .init(x: 0.5, y: 0.3)
+        XCTAssertEqual(GestureGeometry.classify(hands: [low], face: face), .handSeal)
+        let j = low.joints
+        let side = HandSample(joints: HandJoints(wrist: j.wrist, index: rot(j.index), middle: rot(j.middle), ring: rot(j.ring), little: rot(j.little)), tip: low.tip)
+        XCTAssertEqual(GestureGeometry.classify(hands: [side], face: face), .none)
+        // two hands clasped -> seal
+        let seal = { (o: CGPoint) in HandSample(joints: self.hand(index: true, middle: false, ring: false, little: false, spread: 0, at: o), tip: .zero) }
+        XCTAssertEqual(GestureGeometry.classify(hands: [seal(.zero), seal(.init(x: 0.3, y: 0))], face: nil), .handSeal)
+    }
+    /// Replays every JSON saved by the debug window's "Record frame" button (drop them in Fixtures/).
+    func testRecordedFixtures() throws {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures")
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        for f in files where f.pathExtension == "json" {
+            let fx = try JSONDecoder().decode(GestureFixture.self, from: Data(contentsOf: f))
+            XCTAssertEqual(GestureGeometry.classify(hands: fx.hands, face: fx.face), fx.expected, f.lastPathComponent)
+        }
+    }
+    func testFixtureRoundTrip() throws {
+        let fx = GestureFixture(expected: .vSign, hands: [HandSample(joints: hand(index: true, middle: true, ring: false, little: false), tip: .init(x: 0.5, y: 0.2))], face: nil)
+        let back = try JSONDecoder().decode(GestureFixture.self, from: JSONEncoder().encode(fx))
+        XCTAssertEqual(GestureGeometry.classify(hands: back.hands, face: back.face), .vSign)
     }
 
     // MARK: smoke tests on a synthetic solid-colour buffer

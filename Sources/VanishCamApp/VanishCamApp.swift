@@ -10,6 +10,8 @@ final class AppModel: ObservableObject {
     @Published var needsRoom = false
     @Published var active = false
     @Published var statusMessage: String?
+    /// Gesture debug window open (not persisted: always off at launch).
+    @Published var debug = false { didSet { engine.debugEnabled = debug } }
 
     let store = SettingsStore()
     let engine = CameraEngine()
@@ -53,7 +55,7 @@ struct VanishCamApp: App {
 
     var body: some Scene {
         // hidden while the camera is off; stays visible on errors so they aren't silent
-        MenuBarExtra(isInserted: Binding(get: { model.active || model.statusMessage != nil }, set: { _ in })) {
+        MenuBarExtra(isInserted: Binding(get: { model.active || model.statusMessage != nil || model.debug }, set: { _ in })) {
             MenuContent(model: model)
         } label: {
             // calibrating = needs an empty room: tell the user to step out
@@ -63,6 +65,8 @@ struct VanishCamApp: App {
         }
         .menuBarExtraStyle(.menu)
 
+        Window("Gesture Debug", id: "gesture-debug") { GestureDebugView(model: model) }
+
         Settings { SettingsView(model: model) }
     }
 }
@@ -70,6 +74,7 @@ struct VanishCamApp: App {
 private struct MenuContent: View {
     @ObservedObject var model: AppModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         if let msg = model.statusMessage { Text(msg); Divider() }
@@ -81,6 +86,10 @@ private struct MenuContent: View {
         Button("Vanish / Reappear") { model.engine.toggle() }
         Button("Recapture Background") { model.engine.recapture() }
         Divider()
+        Toggle("Gesture debug", isOn: Binding(get: { model.debug }, set: { on in
+            model.debug = on
+            if on { NSApp.activate(ignoringOtherApps: true); openWindow(id: "gesture-debug") }
+        }))
         Button("Settings…") { NSApp.activate(ignoringOtherApps: true); openSettings() }
             .keyboardShortcut(",")
         Button("Quit VanishCam") { NSApp.terminate(nil) }
