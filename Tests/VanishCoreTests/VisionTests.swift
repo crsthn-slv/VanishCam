@@ -80,6 +80,39 @@ final class VisionTests: XCTestCase {
         XCTAssertFalse(r.contains(CGPoint(x: 0.5, y: 0.5)))   // chin/nose area
     }
 
+    // MARK: calibration kNN
+    func testFeaturesLengthStable() {
+        let h = hand(index: true, middle: true, ring: false, little: false)
+        let n = GestureGeometry.featureCount
+        XCTAssertEqual(GestureGeometry.features([]), Array(repeating: 0, count: n))
+        XCTAssertEqual(GestureGeometry.features([h]).count, n)
+        XCTAssertEqual(GestureGeometry.features([h, h, h]).count, n)
+        XCTAssertEqual(GestureGeometry.features([h, h]).last, 2)
+    }
+    func calibrated() -> GestureSamples {
+        var g = SystemRandomNumberGenerator()
+        var s = GestureSamples()
+        for (label, c) in [("vSign", 0.0), ("handSeal", 5.0), ("none", -5.0)] {
+            for _ in 0..<30 { s.add(label: label, features: (0..<4).map { _ in c + .random(in: -0.5...0.5, using: &g) }) }
+        }
+        s.add(label: "vSign", features: [1, 2])   // wrong length: ignored
+        return s.prepared()
+    }
+    func testKNNClassify() {
+        let s = calibrated()
+        XCTAssertEqual(s.classify([0.1, 0, -0.1, 0.2]).gesture, .vSign)
+        XCTAssertEqual(s.classify([5, 5.1, 4.9, 5]).gesture, .handSeal)
+        XCTAssertEqual(s.classify([-5, -5, -5, -5]).gesture, .none)
+        XCTAssertEqual(s.classify([40, -40, 40, -40]).gesture, .none)   // far from everything: rejected
+        XCTAssertEqual(GestureSamples().classify([0, 0, 0, 0]).gesture, .none)
+    }
+    func testSamplesCodable() throws {
+        let s = calibrated()
+        let back = try JSONDecoder().decode(GestureSamples.self, from: JSONEncoder().encode(s))
+        XCTAssertEqual(back.samples.count, s.samples.count)
+        XCTAssertEqual(back.classify([5, 5, 5, 5]).gesture, .handSeal)
+    }
+
     // MARK: smoke tests on a synthetic solid-colour buffer
     func solid(_ w: Int, _ h: Int) -> CVPixelBuffer {
         var pb: CVPixelBuffer?

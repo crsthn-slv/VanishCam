@@ -104,6 +104,29 @@ public enum GestureGeometry {
         isTwoFingersTogether(h, c) && h.index.tip.y > h.wrist.y && tiltFromUp(h) <= c.sealOneHandMaxTiltDeg
     }
 
+    /// Fixed-length feature vector for the kNN classifier (`GestureSamples`). Hands sorted by wrist x,
+    /// max 2, a missing hand is zeros. Per hand: 4 extension ratios, tip spread, tilt/90, index-tip height / palm.
+    /// Then: wrist distance and index-tip distance / mean palm (0 with < 2 hands), hand count.
+    public static let featureCount = 2 * 7 + 3
+    public static func features(_ hands: [HandJoints]) -> [Double] {
+        let hs = Array(hands.sorted { $0.wrist.x < $1.wrist.x }.prefix(2))
+        var f: [CGFloat] = []
+        for k in 0..<2 {
+            guard k < hs.count else { f += Array(repeating: 0, count: 7); continue }
+            let h = hs[k]
+            f += [h.index, h.middle, h.ring, h.little].map { extensionRatio($0, wrist: h.wrist) }
+            f += [tipSpread(h), tiltFromUp(h) / 90, (h.index.tip.y - h.wrist.y) / h.palm]
+        }
+        if hs.count == 2 {
+            let palm = (hs[0].palm + hs[1].palm) / 2
+            f += [dist(hs[0].wrist, hs[1].wrist) / palm, dist(hs[0].index.tip, hs[1].index.tip) / palm]
+        } else {
+            f += [0, 0]
+        }
+        f.append(CGFloat(hs.count))
+        return f.map(Double.init)
+    }
+
     /// Forehead region in normalized image coords (y up). `browTopY` = highest eyebrow point, if known.
     public static func foreheadRegion(faceBox f: CGRect, browTopY: CGFloat?, _ c: GestureConfig = .init()) -> CGRect {
         let bottom = browTopY ?? (f.maxY - c.foreheadFallbackDepth * f.height)

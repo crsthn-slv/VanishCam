@@ -4,7 +4,7 @@ import Foundation
 import Vision
 
 /// Apple Vision gesture detector. Call from one background queue (internally locked anyway).
-/// Priority: foreheadTwoFingers > handSeal > vSign.
+/// Priority: foreheadTwoFingers > handSeal > vSign. With calibration `samples`, kNN replaces the seal/V rules.
 public final class VisionGestureDetector: GestureDetecting {
     public var config: GestureConfig
     private let lock = NSLock()
@@ -12,6 +12,19 @@ public final class VisionGestureDetector: GestureDetecting {
     private let handRequest = VNDetectHumanHandPoseRequest()
     private let faceRequest = VNDetectFaceLandmarksRequest()
     private var scaled: CVPixelBuffer?
+    private var _samples: GestureSamples?
+    private var _lastFeatures: [Double]?
+    private var _lastDistance: Double?
+
+    /// Per-user calibration. Non-empty = kNN decides vSign/handSeal (teleport stays rule-based).
+    public var samples: GestureSamples? {
+        get { lock.lock(); defer { lock.unlock() }; return _samples }
+        set { let p = newValue?.prepared(); lock.lock(); _samples = p; lock.unlock() }
+    }
+    /// Feature vector of the last analyzed frame (zeros with count 0 when no hand), for calibration capture.
+    public var lastFeatures: [Double]? { lock.lock(); defer { lock.unlock() }; return _lastFeatures }
+    /// Nearest-sample distance of the last kNN decision (debug).
+    public var lastDistance: Double? { lock.lock(); defer { lock.unlock() }; return _lastDistance }
 
     public init(config: GestureConfig = .init()) {
         self.config = config
@@ -31,6 +44,8 @@ public final class VisionGestureDetector: GestureDetecting {
                 guard let r = try? o.recognizedPoint(n) else { return nil }; return r.location }
             return (h, p(.indexTip) ?? .zero, p(.middleTip) ?? .zero)
         }
+        _lastFeatures = GestureGeometry.features(hands.map(\.joints))
+        _lastDistance = nil
         guard !hands.isEmpty else { return .none }
 
         // Face only when a hand could be Teleport (fingers at the forehead) or the one-hand seal
@@ -50,6 +65,11 @@ public final class VisionGestureDetector: GestureDetecting {
             let browTop = brow.map { box.minY + $0.y * box.height }.max()
             let region = GestureGeometry.foreheadRegion(faceBox: box, browTopY: browTop, config)
             if teleportish.contains(where: { region.contains(tip($0)) }) { return .foreheadTwoFingers }
+        }
+        if let samples = _samples, !samples.isEmpty, let f = _lastFeatures {
+            let r = samples.classify(f)
+            _lastDistance = r.distance
+            return r.gesture
         }
         if hands.count == 2, GestureGeometry.isHandSeal(hands[0].joints, hands[1].joints, config) { return .handSeal }
         if let face, sealish.contains(where: { tip($0).y < face.boundingBox.midY }) { return .handSeal }

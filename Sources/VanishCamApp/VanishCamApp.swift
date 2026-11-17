@@ -103,13 +103,18 @@ private struct EffectToggles: View {
 private struct SettingsView: View {
     @ObservedObject var model: AppModel
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var calibrating = false
 
     var body: some View {
         Form {
             Picker("Camera", selection: $model.settings.cameraName) {
                 ForEach(CameraEngine.availableCameras(), id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.localizedName)) }
             }
-            Section("Gestures") { EffectToggles(model: model) }
+            Section("Gestures") {
+                EffectToggles(model: model)
+                Button("Calibrate gestures…") { calibrating = true }.disabled(!model.engine.running)
+                Button("Reset gesture calibration") { model.engine.resetSamples() }
+            }
             LabeledContent("Gesture hold time") {
                 Slider(value: $model.settings.holdSeconds, in: 0.1...2, step: 0.1)
                 Text(String(format: "%.1f s", model.settings.holdSeconds)).monospacedDigit().frame(width: 56, alignment: .trailing)
@@ -130,6 +135,7 @@ private struct SettingsView: View {
                 .onChange(of: launchAtLogin) { model.setLaunchAtLogin($0) }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $calibrating) { CalibrationView(model: model) }
         .frame(width: 460, height: 520)
     }
 }

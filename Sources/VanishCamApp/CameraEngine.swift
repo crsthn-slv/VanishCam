@@ -21,10 +21,14 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     private var lastSync = Date.distantPast
     private var logWatcher: Process?
     private var ignoreStopsUntil = Date.distantPast
+    let detector = VisionGestureDetector()
+    /// Gesture calibration runs the camera outside a call; frames are processed but never sent to the sink.
+    private var calibrating = false
 
     static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("VanishCam", isDirectory: true)
     static var plateURL: URL { support.appendingPathComponent("plate.png") }
+    static var samplesURL: URL { support.appendingPathComponent("gestures.json") }
 
     static func availableCameras() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external], mediaType: .video, position: .unspecified)
@@ -36,6 +40,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         guard !running else { return }
         guard sink.connect() else { throw NSError(domain: "VanishCam", code: 1,
             userInfo: [NSLocalizedDescriptionKey: "OBS Virtual Camera not found — start it once in OBS, then quit OBS."]) }
+        detector.samples = (try? Data(contentsOf: Self.samplesURL)).flatMap { try? JSONDecoder().decode(GestureSamples.self, from: $0) }
         let renderer = try EffectRenderer()
         var s = VanishPipeline.Settings(plateURL: Self.plateURL)
         s.holdSeconds = app.holdSeconds
@@ -43,7 +48,7 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         s.outputWidth = app.outputWidth
         s.outputHeight = app.outputHeight
         let p = try VanishPipeline(settings: s, renderer: renderer,
-                                   detector: VisionGestureDetector(), segmenter: VisionPersonSegmenter())
+                                   detector: detector, segmenter: VisionPersonSegmenter())
         p.soundDelegate = self
         pipeline = p
         converter = try UYVYConverter(device: renderer.device, queue: renderer.commandQueue)
@@ -115,6 +120,31 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
         }
     }
 
+    func saveSamples(_ samples: GestureSamples) {
+        guard let data = try? JSONEncoder().encode(samples) else { return }
+        try? data.write(to: Self.samplesURL, options: .atomic)
+        detector.samples = samples
+    }
+
+    /// Back to the rule-based detector.
+    func resetSamples() {
+        try? FileManager.default.removeItem(at: Self.samplesURL)
+        detector.samples = nil
+    }
+
+    /// Run the camera outside a call and mute effects, so the sheet can read `detector.lastFeatures`.
+    func beginCalibration() {
+        calibrating = true
+        pipeline?.settings.enabled = []
+        if !active { queue.async { [session] in session.startRunning() } }
+    }
+
+    func endCalibration(settings app: AppSettings) {
+        calibrating = false
+        pipeline?.settings.enabled = app.enabledEffects
+        if !active { queue.async { [session] in session.stopRunning() } }
+    }
+
     func toggle() { pipeline?.toggle() }
     func recapture() { pipeline?.recapture() }
     var phaseName: String { pipeline?.phaseName ?? "stopped" }
@@ -135,7 +165,8 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
 
     func captureOutput(_ o: AVCaptureOutput, didOutput sb: CMSampleBuffer, from c: AVCaptureConnection) {
         guard let pb = CMSampleBufferGetImageBuffer(sb),
-              let out = pipeline?.process(pb), let uyvy = converter?.convert(out) else { return }
+              let out = pipeline?.process(pb) else { return }
+        guard active, let uyvy = converter?.convert(out) else { return }   // calibrating: detect only, no sink output
         sink.send(uyvy)
         if Date().timeIntervalSince(lastSync) >= 1 { lastSync = Date(); syncBackgroundEffect() }
     }

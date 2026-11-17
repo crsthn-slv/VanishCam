@@ -390,7 +390,7 @@ public final class VanishPipeline {
         detectQueue.async { [self] in
             let g = detector.detect(in: frame)
             lock.lock(); latestGesture = g; detecting = false; lock.unlock()
-            if settings.debug { log("gesture: \(g)") }
+            if settings.debug { log("gesture: \(g)" + ((detector as? VisionGestureDetector)?.lastDistance.map { String(format: " (knn distance %.2f)", $0) } ?? "")) }
         }
     }
 

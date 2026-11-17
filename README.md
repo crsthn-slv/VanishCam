@@ -10,7 +10,7 @@ macOS menu-bar app that makes you vanish from your webcam with a hand gesture. W
 | Two fingers on your forehead (hold 1 s) | **Teleport** — speed lines and a flash |
 
 All gestures are active at once; switch off the ones you don't want in the menu. Make any enabled gesture
-again to reappear. The camera only runs while a call app is using the OBS Virtual Camera.
+again to reappear. Gestures misfiring? Settings → Calibrate gestures… records your own V sign and hand seal (about a minute) and stores them in `~/Library/Application Support/VanishCam/gestures.json`. The camera only runs while a call app is using the OBS Virtual Camera.
 
 ## Requirements
 - macOS 14+ (Apple Silicon or Intel), Swift 5.9 toolchain
