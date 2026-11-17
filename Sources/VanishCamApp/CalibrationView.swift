@@ -14,7 +14,7 @@ private final class CalibrationRunner: ObservableObject {
         ("Two fingers on forehead", "teleport", "Index and middle together, fingertips on your forehead"),
         ("Forehead, slightly different angle", "teleport", "Same sign, turn the hand or your head a little"),
         ("Open palm", "none", "Fingers spread, palm to the camera"),
-        ("Two fingers pointing sideways", "none", "One hand, index and middle together, pointing to the side"),
+        ("Two fingers pointing sideways", "none", "Like the hand seal, but one hand and fingers horizontal: point index + middle (together) at the side wall"),
         ("Prayer hands", "none", "Palms together, fingers up"),
         ("Fist", "none", "Closed fist"),
         ("Hand near your face", "none", "Any relaxed hand next to your face"),
