@@ -1,6 +1,7 @@
 import AVFoundation
 import AppKit
 import Combine
+import CoreImage
 import VanishCore
 
 /// Owns the capture session, VanishPipeline, renderer, UYVYConverter and OBS sink (pattern from the CLI).
@@ -24,6 +25,12 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     let detector = VisionGestureDetector()
     /// Gesture calibration runs the camera outside a call; frames are processed but never sent to the sink.
     private var calibrating = false
+    private let previewLock = NSLock()
+    private var _preview: CGImage?
+    private var lastPreview = Date.distantPast
+    private let ciContext = CIContext()
+    /// Latest camera frame (~640 px wide, ~15 Hz) while calibrating; nil otherwise.
+    var previewFrame: CGImage? { previewLock.lock(); defer { previewLock.unlock() }; return _preview }
 
     static let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("VanishCam", isDirectory: true)
@@ -135,12 +142,15 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     /// Run the camera outside a call and mute effects, so the sheet can read `detector.lastFeatures`.
     func beginCalibration() {
         calibrating = true
+        detector.alwaysDetectFace = true
         pipeline?.settings.enabled = []
         if !active { queue.async { [session] in session.startRunning() } }
     }
 
     func endCalibration(settings app: AppSettings) {
         calibrating = false
+        detector.alwaysDetectFace = false
+        previewLock.lock(); _preview = nil; previewLock.unlock()
         pipeline?.settings.enabled = app.enabledEffects
         if !active { queue.async { [session] in session.stopRunning() } }
     }
@@ -166,6 +176,13 @@ final class CameraEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSa
     func captureOutput(_ o: AVCaptureOutput, didOutput sb: CMSampleBuffer, from c: AVCaptureConnection) {
         guard let pb = CMSampleBufferGetImageBuffer(sb),
               let out = pipeline?.process(pb) else { return }
+        if calibrating, Date().timeIntervalSince(lastPreview) >= 1.0 / 15 {
+            lastPreview = Date()
+            let img = CIImage(cvPixelBuffer: pb)
+            let scaled = img.transformed(by: CGAffineTransform(scaleX: 640 / img.extent.width, y: 640 / img.extent.width))
+            let cg = ciContext.createCGImage(scaled, from: scaled.extent)
+            previewLock.lock(); _preview = cg; previewLock.unlock()
+        }
         guard active, let uyvy = converter?.convert(out) else { return }   // calibrating: detect only, no sink output
         sink.send(uyvy)
         if Date().timeIntervalSince(lastSync) >= 1 { lastSync = Date(); syncBackgroundEffect() }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Per-user labeled gesture samples (`GestureGeometry.features` vectors) and a kNN classifier over them.
-/// Labels: "vSign", "handSeal", "none" (confusers). Call `prepared()` once after adding samples so
+/// Labels: "vSign", "handSeal", "teleport", "none" (confusers). Call `prepared()` once after adding samples so
 /// `classify` doesn't recompute normalization and threshold every frame.
 public struct GestureSamples: Codable, Sendable {
     public struct Sample: Codable, Sendable {
@@ -11,10 +11,21 @@ public struct GestureSamples: Codable, Sendable {
     public private(set) var samples: [Sample] = []
     private var model: Model?
 
-    private enum CodingKeys: String, CodingKey { case samples }
+    private enum CodingKeys: String, CodingKey { case samples, version }
     static let k = 5
 
     public init() {}
+    /// Samples saved with another `GestureGeometry.featureVersion` (or none) load as empty = uncalibrated (rules).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard try c.decodeIfPresent(Int.self, forKey: .version) == GestureGeometry.featureVersion else { return }
+        samples = try c.decode([Sample].self, forKey: .samples)
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(samples, forKey: .samples)
+        try c.encode(GestureGeometry.featureVersion, forKey: .version)
+    }
     public var isEmpty: Bool { samples.isEmpty }
 
     public mutating func add(label: String, features: [Double]) {
@@ -49,6 +60,7 @@ public struct GestureSamples: Codable, Sendable {
         switch label {
         case "vSign": return .vSign
         case "handSeal": return .handSeal
+        case "teleport": return .foreheadTwoFingers
         default: return .none
         }
     }

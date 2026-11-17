@@ -104,25 +104,51 @@ public enum GestureGeometry {
         isTwoFingersTogether(h, c) && h.index.tip.y > h.wrist.y && tiltFromUp(h) <= c.sealOneHandMaxTiltDeg
     }
 
-    /// Fixed-length feature vector for the kNN classifier (`GestureSamples`). Hands sorted by wrist x,
-    /// max 2, a missing hand is zeros. Per hand: 4 extension ratios, tip spread, tilt/90, index-tip height / palm.
-    /// Then: wrist distance and index-tip distance / mean palm (0 with < 2 hands), hand count.
-    public static let featureCount = 2 * 7 + 3
-    public static func features(_ hands: [HandJoints]) -> [Double] {
-        let hs = Array(hands.sorted { $0.wrist.x < $1.wrist.x }.prefix(2))
+    /// Curl of one finger without the wrist: tip-to-MCP / MCP-to-PIP (straight ~2.0+, folded < 1).
+    /// A finger Vision didn't see (all three joints at one point) reads 0 = folded.
+    static func curl(_ f: FingerJoints) -> CGFloat {
+        let seg = dist(f.mcp, f.pip)
+        return seg < 1e-6 ? 0 : dist(f.tip, f.mcp) / seg
+    }
+    /// Wrist-free hand size: index MCP <-> little MCP, else 2 x index MCP->PIP (little not seen).
+    // ponytail: the 2x fallback is a rough palm-width/phalanx ratio; per-user ratio from calibration if it matters.
+    static func palmWidth(_ h: HandJoints) -> CGFloat {
+        let w = dist(h.index.mcp, h.little.mcp)
+        return max(w > 1e-6 ? w : 2 * dist(h.index.mcp, h.index.pip), 1e-6)
+    }
+
+    /// Bump when `features` changes: saved calibrations of another version are dropped (`GestureSamples`).
+    public static let featureVersion = 2
+    /// Fixed-length feature vector for the kNN classifier (`GestureSamples`). Never reads the wrist, so a hand
+    /// with only its index finger (MCP, PIP, tip) in view works. Hands sorted by index MCP x, max 2, a missing
+    /// hand is zeros. Per hand: 4 curls, index-middle tip spread / palm width, index MCP->tip tilt / 90,
+    /// index tip relative to the face centre / face height (x, y; 0 without a face).
+    /// Then: index MCP distance and index-tip distance / mean palm width (0 with < 2 hands), face seen (0/1),
+    /// hand count (last, the calibration UI reads it).
+    /// `face`: face box in the same aspect-corrected units as the joints.
+    public static let featureCount = 2 * 8 + 4
+    public static func features(_ hands: [HandJoints], face: CGRect? = nil) -> [Double] {
+        let hs = Array(hands.sorted { $0.index.mcp.x < $1.index.mcp.x }.prefix(2))
         var f: [CGFloat] = []
         for k in 0..<2 {
-            guard k < hs.count else { f += Array(repeating: 0, count: 7); continue }
-            let h = hs[k]
-            f += [h.index, h.middle, h.ring, h.little].map { extensionRatio($0, wrist: h.wrist) }
-            f += [tipSpread(h), tiltFromUp(h) / 90, (h.index.tip.y - h.wrist.y) / h.palm]
+            guard k < hs.count else { f += Array(repeating: 0, count: 8); continue }
+            let h = hs[k], tip = h.index.tip
+            let v = CGPoint(x: tip.x - h.index.mcp.x, y: tip.y - h.index.mcp.y)
+            f += [h.index, h.middle, h.ring, h.little].map(curl)
+            f += [dist(h.index.tip, h.middle.tip) / palmWidth(h), abs(atan2(v.x, v.y)) * 180 / .pi / 90]
+            if let face, face.height > 1e-6 {
+                f += [(tip.x - face.midX) / face.height, (tip.y - face.midY) / face.height]
+            } else {
+                f += [0, 0]
+            }
         }
         if hs.count == 2 {
-            let palm = (hs[0].palm + hs[1].palm) / 2
-            f += [dist(hs[0].wrist, hs[1].wrist) / palm, dist(hs[0].index.tip, hs[1].index.tip) / palm]
+            let palm = (palmWidth(hs[0]) + palmWidth(hs[1])) / 2
+            f += [dist(hs[0].index.mcp, hs[1].index.mcp) / palm, dist(hs[0].index.tip, hs[1].index.tip) / palm]
         } else {
             f += [0, 0]
         }
+        f.append(face == nil ? 0 : 1)
         f.append(CGFloat(hs.count))
         return f.map(Double.init)
     }

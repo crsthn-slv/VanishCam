@@ -358,8 +358,10 @@ public final class VanishPipeline {
             lastSeen = now
         } else if now.timeIntervalSince(lastSeen) > 0.4 { heldGesture = .none; armed = true }
         // every enabled gesture is live: it vanishes with its own effect; any of them brings you back
-        // with the effect you vanished with. the seal fires at once, teleport needs a 1 s hold
-        if armed, let k = [Gesture.vSign: EffectKind.dissolve, .handSeal: .substitution, .foreheadTwoFingers: .teleport][heldGesture],
+        // with the effect you vanished with. the seal fires at once, teleport needs a 1 s hold.
+        // Mid-animation the gesture stays armed (not consumed) and fires once the phase can act on it.
+        let canAct: Bool = { switch phase { case .live, .gone: return true; default: return false } }()
+        if armed, canAct, let k = [Gesture.vSign: EffectKind.dissolve, .handSeal: .substitution, .foreheadTwoFingers: .teleport][heldGesture],
            settings.enabled.contains(k), now.timeIntervalSince(holdStart) >= ([.substitution: 0.0, .teleport: 1.0][k] ?? settings.holdSeconds) {
             trigger = true; armed = false
             if case .live = phase, k != active.kind, let e = try? renderer.effect(k) { active = e }

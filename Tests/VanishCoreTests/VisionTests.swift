@@ -89,6 +89,31 @@ final class VisionTests: XCTestCase {
         XCTAssertEqual(GestureGeometry.features([h, h, h]).count, n)
         XCTAssertEqual(GestureGeometry.features([h, h]).last, 2)
     }
+    func testFeaturesWithoutWrist() {
+        // only the index finger seen, wrist unknown (out of frame): fixed length, finite, wrist-independent
+        let i = finger(x: 0, ext: true), folded = F(mcp: i.mcp, pip: i.mcp, tip: i.mcp)
+        let a = HandJoints(wrist: .init(x: CGFloat.nan, y: .nan), index: i, middle: folded, ring: folded, little: folded)
+        let b = HandJoints(wrist: .init(x: 9, y: -9), index: i, middle: folded, ring: folded, little: folded)
+        let face = CGRect(x: -0.5, y: 1.5, width: 1, height: 1)
+        let f = GestureGeometry.features([a], face: face)
+        XCTAssertEqual(f.count, GestureGeometry.featureCount)
+        XCTAssertTrue(f.allSatisfy(\.isFinite))
+        XCTAssertEqual(f, GestureGeometry.features([b], face: face))
+        XCTAssertGreaterThan(f[0], 1.5)   // index curl: straight
+        XCTAssertEqual(f[7], 0.2, accuracy: 1e-9)    // tip y 2.2 vs face centre 2.0, face height 1
+        XCTAssertEqual(f[f.count - 2], 1)   // face seen
+    }
+    func testTeleportLabel() {
+        var s = GestureSamples()
+        for j in 0..<20 { s.add(label: "teleport", features: [0, 1, Double(j) * 0.01]); s.add(label: "none", features: [0, -1, Double(j) * 0.01]) }
+        XCTAssertEqual(s.prepared().classify([0, 1, 0.1]).gesture, .foreheadTwoFingers)
+    }
+    func testOtherFeatureVersionLoadsEmpty() throws {
+        for json in [#"{"samples":[{"label":"vSign","features":[1,2]}]}"#,
+                     #"{"version":1,"samples":[{"label":"vSign","features":[1,2]}]}"#] {
+            XCTAssertTrue(try JSONDecoder().decode(GestureSamples.self, from: Data(json.utf8)).isEmpty)
+        }
+    }
     func calibrated() -> GestureSamples {
         var g = SystemRandomNumberGenerator()
         var s = GestureSamples()
